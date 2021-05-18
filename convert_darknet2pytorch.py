@@ -53,7 +53,7 @@ def convert(opts, frame_size):
     torch.save(states, save_file_path)
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     opts = parse_opts()
 
     for frame_size in FRAME_SIZES:
