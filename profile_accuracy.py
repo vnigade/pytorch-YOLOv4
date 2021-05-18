@@ -118,53 +118,6 @@ def evaluate_on_coco(cfg, resFile):
     cocoEval.evaluate()
     cocoEval.accumulate()
     cocoEval.summarize()
-    exit()
-
-    with open(cfg.gt_annotations_path, 'r') as f:
-        gt_annotation_raw = json.load(f)
-        gt_annotation_raw_images = gt_annotation_raw["images"]
-        gt_annotation_raw_labels = gt_annotation_raw["annotations"]
-
-    rgb_label = (255, 0, 0)
-    rgb_pred = (0, 255, 0)
-
-    for i, image_id in enumerate(reshaped_annotations):
-        image_annotations = reshaped_annotations[image_id]
-        gt_annotation_image_raw = list(filter(
-            lambda image_json: image_json['id'] == image_id, gt_annotation_raw_images
-        ))
-        gt_annotation_labels_raw = list(filter(
-            lambda label_json: label_json['image_id'] == image_id, gt_annotation_raw_labels
-        ))
-        if len(gt_annotation_image_raw) == 1:
-            image_path = os.path.join(
-                cfg.dataset_dir, gt_annotation_image_raw[0]["file_name"])
-            actual_image = Image.open(image_path).convert('RGB')
-            draw = ImageDraw.Draw(actual_image)
-
-            for annotation in image_annotations:
-                x1_pred, y1_pred, w, h = annotation['bbox']
-                x2_pred, y2_pred = x1_pred + w, y1_pred + h
-                cls_id = annotation['category_id']
-                label = get_class_name(cls_id)
-                draw.text((x1_pred, y1_pred), label, fill=rgb_pred)
-                draw.rectangle([x1_pred, y1_pred, x2_pred,
-                                y2_pred], outline=rgb_pred)
-            for annotation in gt_annotation_labels_raw:
-                x1_truth, y1_truth, w, h = annotation['bbox']
-                x2_truth, y2_truth = x1_truth + w, y1_truth + h
-                cls_id = annotation['category_id']
-                label = get_class_name(cls_id)
-                draw.text((x1_truth, y1_truth), label, fill=rgb_label)
-                draw.rectangle([x1_truth, y1_truth, x2_truth,
-                                y2_truth], outline=rgb_label)
-            actual_image.save(
-                "./data/outcome/predictions_{}".format(gt_annotation_image_raw[0]["file_name"]))
-        else:
-            print('please check')
-            break
-        if (i + 1) % 100 == 0:  # just see first 100
-            break
 
 
 def test(model, annotations, cfg):
@@ -177,6 +130,7 @@ def test(model, annotations, cfg):
 
     if torch.cuda.is_available():
         use_cuda = 1
+        model.cuda()
     else:
         use_cuda = 0
 
@@ -188,67 +142,69 @@ def test(model, annotations, cfg):
     do_detect(model, throwaway_image, 0.5, 0.4, use_cuda)
     boxes_json = []
 
-    for i, image_annotation in enumerate(images):
-        logging.info("currently on image: {}/{}".format(i + 1, len(images)))
-        image_file_name = image_annotation["file_name"]
-        image_id = image_annotation["id"]
-        image_height = image_annotation["height"]
-        image_width = image_annotation["width"]
+    total_images = len(images)
+    i = 0
+    while i < total_images:
+        batch_start = i
+        batch_end = i + cfg.batch_size
+        if batch_end > total_images:
+            batch_end = total_images
 
-        # open and resize each image first
-        # img = Image.open(os.path.join(cfg.dataset_dir, image_file_name)).convert('RGB')
-        # sized = img.resize((model.width, model.height))
-        img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
-        sized = cv2.resize(img, (model.width, model.height), cv2.INTER_LINEAR)
-        print("File Name: ", image_file_name)
-        print("Image size: (height, width) = ({}, {})".format(
-            img.shape[0], img.shape[1]))
-        print("Sized Image size: (height, width) = ({}, {})".format(
-            sized.shape[0], sized.shape[1]))
-        print("Annotation Image size: (height, width) = ({}, {})".format(
-            image_height, image_width))
+        batch_images = []
+        batch_image_annotations = {}
+        for batch in range(batch_start, batch_end):
+            image_annotation = images[batch]
+            logging.info(
+                "currently on image: {}/{}".format(batch + 1, len(images)))
+            image_file_name = image_annotation["file_name"]
+            image_id = image_annotation["id"]
+            batch_image_annotations[batch] = image_annotation
+            img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
+            sized = cv2.resize(
+                img, (model.width, model.height), cv2.INTER_LINEAR)
+            print("File Name: ", image_file_name)
+            print("Image size: (height, width) = ({}, {})".format(
+                img.shape[0], img.shape[1]))
+            print("Sized Image size: (height, width) = ({}, {})".format(
+                sized.shape[0], sized.shape[1]))
+            batch_images.append(sized)
 
-        if use_cuda:
-            model.cuda()
-
+        batch_images = np.array(batch_images)
         start = time.time()
-        boxes = do_detect(model, sized, 0.5, 0.4, use_cuda)
+        batch_boxes = do_detect(model, batch_images, 0.5, 0.4, use_cuda)
         finish = time.time()
-        if type(boxes) == list:
-            for box in boxes[0]:
-                box_json = {}
-                category_id = box[-1]
-                score = box[-2]
-                bbox_normalized = box[:4]
-                box_json["category_id"] = int(category_id)
-                box_json["image_id"] = int(image_id)
-                bbox = []
-                for i, bbox_coord in enumerate(bbox_normalized):
-                    modified_bbox_coord = float(bbox_coord)
-                    if i % 2:
-                        modified_bbox_coord *= image_height
-                    else:
-                        modified_bbox_coord *= image_width
-                    modified_bbox_coord = round(modified_bbox_coord, 2)
-                    bbox.append(modified_bbox_coord)
-                x1 = round(box[0] * image_width, 2)
-                y1 = round(box[1] * image_height, 2)
-                x2 = round(box[2] * image_width, 2)
-                y2 = round(box[3] * image_height, 2)
-                w = x2 - x1
-                h = y2 - y1
-                bbox = [x1, y1, w, h]  # COCO format.
-                # print("Box in COCO: ", bbox)
-                box_json["bbox_normalized"] = list(
-                    map(lambda x: round(float(x), 2), bbox_normalized))
-                box_json["bbox"] = bbox
-                box_json["score"] = round(float(score), 2)
-                box_json["timing"] = float(finish - start)
-                boxes_json.append(box_json)
+        if type(batch_boxes) == list:
+            for b in range(len(batch_boxes)):
+                image_id = batch_image_annotations[b]["id"]
+                image_height = batch_image_annotations[b]["height"]
+                image_width = batch_image_annotations[b]["width"]
+                boxes_json = []
+                for box in batch_boxes[0]:
+                    box_json = {}
+                    category_id = box[-1]
+                    score = box[-2]
+                    bbox_normalized = box[:4]
+                    box_json["category_id"] = int(category_id)
+                    box_json["image_id"] = int(image_id)
+
+                    x1 = round(box[0] * image_width, 2)
+                    y1 = round(box[1] * image_height, 2)
+                    x2 = round(box[2] * image_width, 2)
+                    y2 = round(box[3] * image_height, 2)
+                    w = x2 - x1
+                    h = y2 - y1
+                    bbox = [x1, y1, w, h]  # COCO format.
+                    # print("Box in COCO: ", bbox)
+                    box_json["bbox_normalized"] = list(
+                        map(lambda x: round(float(x), 2), bbox_normalized))
+                    box_json["bbox"] = bbox
+                    box_json["score"] = round(float(score), 2)
+                    box_json["timing"] = float(finish - start)
+                    boxes_json.append(box_json)
                 # print("see box_json: ", box_json)
                 # print("See box: ", convert_cat_id_and_reorientate_bbox(box_json))
-            with open(resFile, 'w') as outfile:
-                json.dump(boxes_json, outfile, default=myconverter)
+                with open(resFile, 'w') as outfile:
+                    json.dump(boxes_json, outfile, default=myconverter)
         else:
             print(
                 "warning: output from model after postprocessing is not a list, ignoring")
@@ -280,6 +236,8 @@ def get_args(**kwargs):
                         help='weights file to load', dest='weights_file')
     parser.add_argument('-c', '--model_config', type=str, default='cfg/yolov4.cfg',
                         help='model config file to load', dest='model_config')
+    parser.add_argument('-b', '--batch_size', type=int, default=1,
+                        help='Batch size ', dest='batch_size')
     args = vars(parser.parse_args())
 
     for k in args.keys():
