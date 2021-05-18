@@ -26,6 +26,7 @@ from cfg import Cfg
 from tool.darknet2pytorch import Darknet
 from tool.utils import load_class_names
 from tool.torch_utils import do_detect
+import cv2
 
 
 def get_class_name(cat):
@@ -171,8 +172,10 @@ def test(model, annotations, cfg):
         use_cuda = 0
 
     # do one forward pass first to circumvent cold start
-    throwaway_image = Image.open('data/dog.jpg').convert('RGB').resize((model.width, model.height))
-    do_detect(model, throwaway_image, 0.5, 80, 0.4, use_cuda)
+    # throwaway_image = Image.open('data/dog.jpg').convert('RGB').resize((model.width, model.height))
+    throwaway_image = cv2.imread('data/dog.jpg')
+    throwaway_image = cv2.resize(throwaway_image, (model.width, model.height), cv2.INTER_LINEAR)
+    do_detect(model, throwaway_image, 0.5, 0.4, use_cuda)
     boxes_json = []
 
     for i, image_annotation in enumerate(images):
@@ -183,17 +186,19 @@ def test(model, annotations, cfg):
         image_width = image_annotation["width"]
 
         # open and resize each image first
-        img = Image.open(os.path.join(cfg.dataset_dir, image_file_name)).convert('RGB')
-        sized = img.resize((model.width, model.height))
+        # img = Image.open(os.path.join(cfg.dataset_dir, image_file_name)).convert('RGB')
+        # sized = img.resize((model.width, model.height))
+        img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
+        sized = cv2.resize(img, (model.width, model.height), cv2.INTER_LINEAR)
 
         if use_cuda:
             model.cuda()
 
         start = time.time()
-        boxes = do_detect(model, sized, 0.0, 80, 0.4, use_cuda)
+        boxes = do_detect(model, sized, 0.5, 0.4, use_cuda)
         finish = time.time()
         if type(boxes) == list:
-            for box in boxes:
+            for box in boxes[0]:
                 box_json = {}
                 category_id = box[-1]
                 score = box[-2]
