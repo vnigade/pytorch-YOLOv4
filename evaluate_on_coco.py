@@ -54,8 +54,9 @@ def get_class_name(cat):
 def convert_cat_id_and_reorientate_bbox(single_annotation):
     cat = single_annotation['category_id']
     bbox = single_annotation['bbox']
-    x, y, w, h = bbox
-    x1, y1, x2, y2 = x - w / 2, y - h / 2, x + w / 2, y + h / 2
+    x1, y1, w, h = bbox
+    # x_center, y_center, w, h = bbox
+    # x1, y1, x2, y2 = x_center - w / 2, y_center - h / 2, x_center + w / 2, y_center + h / 2
     if 0 <= cat <= 10:
         cat = cat + 1
     elif 11 <= cat <= 23:
@@ -75,7 +76,7 @@ def convert_cat_id_and_reorientate_bbox(single_annotation):
     elif 73 <= cat <= 79:
         cat = cat + 11
     single_annotation['category_id'] = cat
-    single_annotation['bbox'] = [x1, y1, w, h]
+    single_annotation['bbox'] = [x1, y1, w, h] # COCO format
     return single_annotation
 
 
@@ -107,6 +108,14 @@ def evaluate_on_coco(cfg, resFile):
 
     cocoGt = COCO(cfg.gt_annotations_path)
     cocoDt = cocoGt.loadRes('temp.json')
+
+    imgIds = sorted(cocoGt.getImgIds())
+    cocoEval = COCOeval(cocoGt, cocoDt, annType)
+    cocoEval.params.imgIds = imgIds
+    cocoEval.evaluate()
+    cocoEval.accumulate()
+    cocoEval.summarize()
+    exit()
 
     with open(cfg.gt_annotations_path, 'r') as f:
         gt_annotation_raw = json.load(f)
@@ -150,13 +159,6 @@ def evaluate_on_coco(cfg, resFile):
         if (i + 1) % 100 == 0: # just see first 100
             break
 
-    imgIds = sorted(cocoGt.getImgIds())
-    cocoEval = COCOeval(cocoGt, cocoDt, annType)
-    cocoEval.params.imgIds = imgIds
-    cocoEval.evaluate()
-    cocoEval.accumulate()
-    cocoEval.summarize()
-
 
 def test(model, annotations, cfg):
     if not annotations["images"]:
@@ -190,6 +192,10 @@ def test(model, annotations, cfg):
         # sized = img.resize((model.width, model.height))
         img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
         sized = cv2.resize(img, (model.width, model.height), cv2.INTER_LINEAR)
+        print("File Name: ", image_file_name)
+        print("Image size: (height, width) = ({}, {})".format(img.shape[0], img.shape[1]))
+        print("Sized Image size: (height, width) = ({}, {})".format(sized.shape[0], sized.shape[1]))
+        print("Annotation Image size: (height, width) = ({}, {})".format(image_height, image_width))
 
         if use_cuda:
             model.cuda()
@@ -214,14 +220,23 @@ def test(model, annotations, cfg):
                         modified_bbox_coord *= image_width
                     modified_bbox_coord = round(modified_bbox_coord, 2)
                     bbox.append(modified_bbox_coord)
+                x1 = round(box[0] * image_width, 2)
+                y1 = round(box[1] * image_height, 2)
+                x2 = round(box[2] * image_width, 2)
+                y2 = round(box[3] * image_height, 2)
+                w = x2 - x1
+                h = y2 - y1
+                bbox = [x1, y1, w, h] # COCO format.
+                # print("Box in COCO: ", bbox)
                 box_json["bbox_normalized"] = list(map(lambda x: round(float(x), 2), bbox_normalized))
                 box_json["bbox"] = bbox
                 box_json["score"] = round(float(score), 2)
                 box_json["timing"] = float(finish - start)
                 boxes_json.append(box_json)
                 # print("see box_json: ", box_json)
-                with open(resFile, 'w') as outfile:
-                    json.dump(boxes_json, outfile, default=myconverter)
+                # print("See box: ", convert_cat_id_and_reorientate_bbox(box_json))
+            with open(resFile, 'w') as outfile:
+                json.dump(boxes_json, outfile, default=myconverter)
         else:
             print("warning: output from model after postprocessing is not a list, ignoring")
             return
@@ -230,8 +245,8 @@ def test(model, annotations, cfg):
         # class_names = load_class_names(namesfile)
         # plot_boxes(img, boxes, 'data/outcome/predictions_{}.jpg'.format(image_id), class_names)
 
-    with open(resFile, 'w') as outfile:
-        json.dump(boxes_json, outfile, default=myconverter)
+    # with open(resFile, 'w') as outfile:
+    #    json.dump(boxes_json, outfile, default=myconverter)
 
     evaluate_on_coco(cfg, resFile)
 
