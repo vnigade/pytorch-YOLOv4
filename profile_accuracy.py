@@ -140,15 +140,16 @@ def test(model, annotations, cfg):
     throwaway_image = cv2.resize(
         throwaway_image, (model.width, model.height), cv2.INTER_LINEAR)
     do_detect(model, throwaway_image, 0.5, 0.4, use_cuda)
-    boxes_json = []
 
     total_images = len(images)
+    boxes_json = []
     i = 0
     while i < total_images:
         batch_start = i
         batch_end = i + cfg.batch_size
         if batch_end > total_images:
             batch_end = total_images
+        i = batch_end
 
         batch_images = []
         batch_image_annotations = {}
@@ -162,24 +163,27 @@ def test(model, annotations, cfg):
             img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
             sized = cv2.resize(
                 img, (model.width, model.height), cv2.INTER_LINEAR)
-            print("File Name: ", image_file_name)
-            print("Image size: (height, width) = ({}, {})".format(
-                img.shape[0], img.shape[1]))
-            print("Sized Image size: (height, width) = ({}, {})".format(
-                sized.shape[0], sized.shape[1]))
+            # print("File Name: ", image_file_name)
+            # print("Image size: (height, width) = ({}, {})".format(
+            #    img.shape[0], img.shape[1]))
+            # print("Sized Image size: (height, width) = ({}, {})".format(
+            #    sized.shape[0], sized.shape[1]))
             batch_images.append(sized)
 
         batch_images = np.array(batch_images)
+        # print("Batch images shape", batch_images.shape)
         start = time.time()
         batch_boxes = do_detect(model, batch_images, 0.5, 0.4, use_cuda)
         finish = time.time()
         if type(batch_boxes) == list:
+            assert len(batch_boxes) == (batch_end-batch_start)
             for b in range(len(batch_boxes)):
-                image_id = batch_image_annotations[b]["id"]
-                image_height = batch_image_annotations[b]["height"]
-                image_width = batch_image_annotations[b]["width"]
-                boxes_json = []
-                for box in batch_boxes[0]:
+                batch = batch_start + b
+                image_id = batch_image_annotations[batch]["id"]
+                image_height = batch_image_annotations[batch]["height"]
+                image_width = batch_image_annotations[batch]["width"]
+                # print("Image id: ", image_id)
+                for box in batch_boxes[b]:
                     box_json = {}
                     category_id = box[-1]
                     score = box[-2]
@@ -203,8 +207,7 @@ def test(model, annotations, cfg):
                     boxes_json.append(box_json)
                 # print("see box_json: ", box_json)
                 # print("See box: ", convert_cat_id_and_reorientate_bbox(box_json))
-                with open(resFile, 'w') as outfile:
-                    json.dump(boxes_json, outfile, default=myconverter)
+                    # json.dump(boxes_json, outfile, default=myconverter)
         else:
             print(
                 "warning: output from model after postprocessing is not a list, ignoring")
@@ -214,8 +217,8 @@ def test(model, annotations, cfg):
         # class_names = load_class_names(namesfile)
         # plot_boxes(img, boxes, 'data/outcome/predictions_{}.jpg'.format(image_id), class_names)
 
-    # with open(resFile, 'w') as outfile:
-    #    json.dump(boxes_json, outfile, default=myconverter)
+    with open(resFile, 'w') as outfile:
+        json.dump(boxes_json, outfile, default=myconverter)
 
     evaluate_on_coco(cfg, resFile)
 
