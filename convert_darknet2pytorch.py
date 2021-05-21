@@ -34,7 +34,7 @@ def parse_opts():
 def convert(opts, frame_size):
     cfg_file_path = opts.model_config_dir + \
         "/yolov4_" + str(frame_size) + ".cfg"
-    model = Darknet(cfg_file_path)
+    model = Darknet(cfg_file_path, inference=True)
     model.print_network()
     model.load_weights(opts.weights_file)
 

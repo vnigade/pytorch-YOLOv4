@@ -173,7 +173,8 @@ def test(model, annotations, cfg):
         batch_images = np.array(batch_images)
         # print("Batch images shape", batch_images.shape)
         start = time.time()
-        batch_boxes = do_detect(model, batch_images, 0.5, 0.4, use_cuda)
+        with torch.no_grad():
+            batch_boxes = do_detect(model, batch_images, 0.5, 0.4, use_cuda)
         finish = time.time()
         if type(batch_boxes) == list:
             assert len(batch_boxes) == (batch_end-batch_start)
@@ -236,7 +237,7 @@ def get_args(**kwargs):
     parser.add_argument('-gta', '--ground_truth_annotations', type=str, default='instances_val2017.json',
                         help='ground truth annotations file', dest='gt_annotations_path')
     parser.add_argument('-w', '--weights_file', type=str, default='weights/yolov4.weights',
-                        help='weights file to load', dest='weights_file')
+                        help='Pytorch weights file to load', dest='weights_file')
     parser.add_argument('-c', '--model_config', type=str, default='cfg/yolov4.cfg',
                         help='model config file to load', dest='model_config')
     parser.add_argument('-b', '--batch_size', type=int, default=1,
@@ -292,15 +293,17 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f'Using device {device}')
 
-    model = Darknet(cfg.model_config)
-
+    model = Darknet(cfg.model_config, inference=True)
     model.print_network()
-    model.load_weights(cfg.weights_file)
+
+    checkpoint = torch.load(cfg.weights_file, map_location=torch.device('cuda'))
+    model.load_state_dict(checkpoint['state_dict'])
+    # model.load_weights(cfg.weights_file)
+    
     model.eval()  # set model away from training
 
-    if torch.cuda.device_count() > 1:
-        model = torch.nn.DataParallel(model)
-
+    # if torch.cuda.device_count() > 1:
+    #    model = torch.nn.DataParallel(model)
     model.to(device=device)
 
     annotations_file_path = cfg.gt_annotations_path
