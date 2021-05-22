@@ -296,10 +296,11 @@ if __name__ == "__main__":
     model = Darknet(cfg.model_config, inference=True)
     model.print_network()
 
-    checkpoint = torch.load(cfg.weights_file, map_location=torch.device('cuda'))
+    checkpoint = torch.load(
+        cfg.weights_file, map_location=torch.device('cuda'))
     model.load_state_dict(checkpoint['state_dict'])
     # model.load_weights(cfg.weights_file)
-    
+
     model.eval()  # set model away from training
 
     # if torch.cuda.device_count() > 1:

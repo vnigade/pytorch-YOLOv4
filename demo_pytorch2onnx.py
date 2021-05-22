@@ -6,18 +6,30 @@ import numpy as np
 import cv2
 import onnxruntime
 import torch
+from tool.darknet2pytorch import Darknet
 
 from tool.utils import *
 from models import Yolov4
 from demo_darknet2onnx import detect
 
-
-def transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W):
+def load_model(model_config_file, weight_file, frame_size):
+    model = Darknet(model_config_file, inference=True)
+    checkpoint = torch.load(
+        weight_file, map_location=torch.device('cuda'))
+    model.load_state_dict(checkpoint['state_dict'])
     
-    model = Yolov4(n_classes=n_classes, inference=True)
+    model.eval()
+    model.cuda()
+    return model
 
-    pretrained_dict = torch.load(weight_file, map_location=torch.device('cuda'))
-    model.load_state_dict(pretrained_dict)
+
+def transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W, model_config_file):
+    
+    # model = Yolov4(n_classes=n_classes, inference=True)
+
+    # pretrained_dict = torch.load(weight_file, map_location=torch.device('cuda'))
+    # model.load_state_dict(pretrained_dict)
+    model = load_model(model_config_file, weight_file, frame_size=IN_IMAGE_H)
 
     input_names = ["input"]
     output_names = ['boxes', 'confs']
@@ -63,10 +75,10 @@ def transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W
     
 
 
-def main(weight_file, image_path, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W):
+def main(weight_file, image_path, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W, model_config_file):
 
     if batch_size <= 0:
-        onnx_path_demo = transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W)
+        onnx_path_demo = transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W, model_config_file)
     else:
         # Transform to onnx as specified batch size
         transform_to_onnx(weight_file, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W)
@@ -84,7 +96,7 @@ def main(weight_file, image_path, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W)
 
 if __name__ == '__main__':
     print("Converting to onnx and running demo ...")
-    if len(sys.argv) == 7:
+    if len(sys.argv) == 8:
         
         weight_file = sys.argv[1]
         image_path = sys.argv[2]
@@ -92,8 +104,9 @@ if __name__ == '__main__':
         n_classes = int(sys.argv[4])
         IN_IMAGE_H = int(sys.argv[5])
         IN_IMAGE_W = int(sys.argv[6])
+        model_config_file = sys.argv[7]
 
-        main(weight_file, image_path, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W)
+        main(weight_file, image_path, batch_size, n_classes, IN_IMAGE_H, IN_IMAGE_W, model_config_file)
     else:
         print('Please run this way:\n')
         print('  python demo_onnx.py <weight_file> <image_path> <batch_size> <n_classes> <IN_IMAGE_H> <IN_IMAGE_W>')

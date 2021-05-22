@@ -1,4 +1,6 @@
 import argparse
+
+from numpy.core.fromnumeric import shape
 from tool.torch_utils import do_detect
 import torch
 import torch.backends.cudnn as cudnn
@@ -6,7 +8,8 @@ from tool.darknet2pytorch import Darknet
 import timeit
 import os
 import numpy as np
-import GPUtil
+import cv2
+import json
 
 FRAME_SIZES = [64,  96,  128, 160, 192, 224, 256,
                288, 320, 352, 384, 416, 448, 480,
@@ -24,16 +27,17 @@ def parse_opts():
     parser.add_argument('--weights_dir', type=str,
                         help='Directory containing pytorch weights')
     parser.add_argument('--model_config_dir', type=str,
-                      default='cfg/', help='Model config directory')
+                        default='cfg/', help='Model config directory')
     parser.add_argument('--max_batch_size', type=int, default=32,
                         help='Maximum batch size')
     parser.add_argument('--input_size', type=int,
                         help='Input size of model')
-    # parser.add_argument('--model_config_dir', type=str,
-    #                     default='cfg/', help='Model config directory')
-    # parser.add_argument('--dst_dir', type=str,
-    #                     default="pytorch_models/", help='Destination directory to save pytorch models')
-
+    parser.add_argument('--gt_annotations_path', type=str, default='instances_val2017.json',
+                        help='ground truth annotations file')
+    parser.add_argument('--dataset_dir', type=str,
+                        default=None, help='dataset dir')
+    parser.add_argument('--total_iter', type=int,
+                        default=100, help='Total iterations')
     args = parser.parse_args()
     args_dict = args.__dict__
     print('{:-^100}'.format('Configurations'))
@@ -43,33 +47,68 @@ def parse_opts():
 
     return args
 
-def test_model_time(opts, model, frame_size, total_iter=1):
+
+def read_image_in_jpg(opts, frame_size, index, batch_size, total_images, images):
+    _ENCODE_PARAM = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+    jpg_files = []
+    for _ in range(batch_size):
+        index = index % total_images
+        image_file_name = images[index]["file_name"]
+        # print(image_file_name, opts.dataset_dir)
+        img = cv2.imread(os.path.join(opts.dataset_dir, image_file_name))
+        img = cv2.resize(img, (frame_size, frame_size), cv2.INTER_NEAREST)
+        jpg_file = cv2.imencode(".jpg", img, _ENCODE_PARAM)[1].tobytes()
+        jpg_files.append(jpg_file)
+    return jpg_files
+
+
+def read_jpg_in_numpy(jpg_files, frame_size):
+    imgs = []
+    for jpg_file in jpg_files:
+        img = cv2.imdecode(np.fromstring(
+            jpg_file, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        # img = cv2.resize(img, (frame_size, frame_size), cv2.INTER_NEAREST)
+        imgs.append(img)
+    imgs = np.array(imgs)
+    return imgs
+
+
+def test_model_time(opts, model, frame_size, annotations):
     output_file = open('profile_latency_{}.txt'.format(frame_size), 'w')
     print("{:<20s},{:<20s},{:<20s}".format(
         "ModelSize", "Batch", "InferenceTime"), file=output_file)
-    for batch in range(6,opts.max_batch_size+1,1):
-        for _ in range(total_iter):
-            # input = torch.rand([batch, frame_size, frame_size, 3])
-            input = np.random.rand(batch, frame_size, frame_size, 3)
-            print(input.nbytes)
+    images = annotations["images"]
+    img_idx = 0
+    total_images = len(images)
+    for batch in range(1, opts.max_batch_size+1, 1):
+        print("Processing batch size", batch)
+        for _ in range(opts.total_iter):
+            jpg_files = read_image_in_jpg(
+                opts, frame_size, img_idx, batch, total_images, images)
+
+            # input = np.random.rand(batch, frame_size, frame_size, 3)
             start_time = timeit.default_timer()
+            input = read_jpg_in_numpy(jpg_files, frame_size)
+            assert input.shape[0] == batch and input.shape[1] == frame_size \
+                and input.shape[2] == frame_size and input.shape[3] == 3
             with torch.no_grad():
-               do_detect(model, input, 0.5, 0.4, use_cuda=(not opts.no_cuda))
-                
+                output = do_detect(model, input, 0.5, 0.4,
+                                   use_cuda=(not opts.no_cuda))
+
             torch.cuda.synchronize()
             inference_time = (timeit.default_timer() - start_time) * 1000
             print("{:<20d},{:<20d},{:<20.2f}".format(
                 frame_size, batch, inference_time), file=output_file)
-            # torch.cuda.memory_summary(device=None, abbreviated=False)
-            # GPUtil.showUtilization()
+            # ms = torch.cuda.memory_summary(device=None, abbreviated=False)
+            # stats = torch.cuda.memory_stats(device=None)
+            # print(ms)
+            # torch.cuda.empty_cache()
     output_file.close()
 
-def load_model(opts, frame_size):
-    # model = Yolov4(yolov4conv137weight=None,
-    #               n_classes=opts.n_classes, inference=True)
 
+def load_model(opts, frame_size):
     cfg_file_path = opts.model_config_dir + \
-                  "/yolov4_" + str(frame_size) + ".cfg"
+        "/yolov4_" + str(frame_size) + ".cfg"
     model = Darknet(cfg_file_path, inference=True)
     weight_file = os.path.join(
         opts.weights_dir, "yolov4_{}.pth".format(frame_size))
@@ -93,7 +132,15 @@ def load_model(opts, frame_size):
 if __name__ == "__main__":
     opts = parse_opts()
 
-    # for frame_size in FRAME_SIZES:
+    annotations_file_path = opts.gt_annotations_path
+    with open(annotations_file_path) as annotations_file:
+        try:
+            annotations = json.load(annotations_file)
+        except:
+            print("annotations file not a json")
+            exit()
+
     frame_size = opts.input_size
     model = load_model(opts, frame_size)
-    test_model_time(opts, model, frame_size, total_iter=1)
+    model.print_network()
+    test_model_time(opts, model, frame_size, annotations)
