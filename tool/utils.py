@@ -163,7 +163,8 @@ def load_class_names(namesfile):
 
 
 
-def post_processing(img, conf_thresh, nms_thresh, output):
+# def post_processing(img, conf_thresh, nms_thresh, output):
+def post_processing(conf_thresh, nms_thresh, output):
 
     # anchors = [12, 16, 19, 36, 40, 28, 36, 75, 76, 55, 72, 146, 142, 110, 192, 243, 459, 401]
     # num_anchors = 9

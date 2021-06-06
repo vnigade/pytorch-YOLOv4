@@ -5,16 +5,25 @@ from tool.torch_utils import do_detect
 import torch
 import torch.backends.cudnn as cudnn
 from tool.darknet2pytorch import Darknet
-import timeit
+import timeit, time
 import os
 import numpy as np
 import cv2
 import json
+import random
 
 FRAME_SIZES = [64,  96,  128, 160, 192, 224, 256,
                288, 320, 352, 384, 416, 448, 480,
                512, 544, 576, 608, 640]
 
+def set_deterministic_behaviour(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    cudnn.enabled = False
+    cudnn.deterministic = True
+    cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
 
 def parse_opts():
     parser = argparse.ArgumentParser(description='Convert darknet model to pytorch',
@@ -51,14 +60,17 @@ def parse_opts():
 def read_image_in_jpg(opts, frame_size, index, batch_size, total_images, images):
     _ENCODE_PARAM = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
     jpg_files = []
+    indexes = []
     for _ in range(batch_size):
         index = index % total_images
+        indexes.append(index)
         image_file_name = images[index]["file_name"]
         # print(image_file_name, opts.dataset_dir)
         img = cv2.imread(os.path.join(opts.dataset_dir, image_file_name))
         img = cv2.resize(img, (frame_size, frame_size), cv2.INTER_NEAREST)
         jpg_file = cv2.imencode(".jpg", img, _ENCODE_PARAM)[1].tobytes()
         jpg_files.append(jpg_file)
+    print("Images: ", indexes)
     return jpg_files
 
 
@@ -87,16 +99,20 @@ def test_model_time(opts, model, frame_size, annotations):
                 opts, frame_size, img_idx, batch, total_images, images)
 
             # input = np.random.rand(batch, frame_size, frame_size, 3)
+            torch.cuda.synchronize()
             start_time = timeit.default_timer()
+            start_perf = time.perf_counter()
             input = read_jpg_in_numpy(jpg_files, frame_size)
             assert input.shape[0] == batch and input.shape[1] == frame_size \
                 and input.shape[2] == frame_size and input.shape[3] == 3
             with torch.no_grad():
                 output = do_detect(model, input, 0.5, 0.4,
-                                   use_cuda=(not opts.no_cuda))
+                                   use_cuda=(not opts.no_cuda), gpu_number=0)
 
             torch.cuda.synchronize()
             inference_time = (timeit.default_timer() - start_time) * 1000
+            perf_time = (time.perf_counter() - start_perf) * 1000
+            print("Processing batch size:", batch, inference_time, perf_time)
             print("{:<20d},{:<20d},{:<20.2f}".format(
                 frame_size, batch, inference_time), file=output_file)
             # ms = torch.cuda.memory_summary(device=None, abbreviated=False)
@@ -118,10 +134,7 @@ def load_model(opts, frame_size):
 
     model.eval()
     if not opts.no_cuda:
-        model.cuda()
-
-    cudnn.benchmarks = True
-    cudnn.enabled = True
+        model.cuda(0)
 
     # Zero grad for parameters
     for param in model.parameters():
@@ -140,6 +153,7 @@ if __name__ == "__main__":
             print("annotations file not a json")
             exit()
 
+    set_deterministic_behaviour(1)
     frame_size = opts.input_size
     model = load_model(opts, frame_size)
     model.print_network()
