@@ -89,12 +89,12 @@ def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1, gpu_number=0):
         img = img.cuda(gpu_number)
     # img = torch.autograd.Variable(img)
    
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(gpu_number)
     t1 = time.time()
 
     with torch.no_grad():
         output = model(img)
-    torch.cuda.synchronize()
+    torch.cuda.synchronize(gpu_number)
     t2 = time.time()
 
     print('-----------------------------------')

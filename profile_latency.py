@@ -30,6 +30,8 @@ def parse_opts():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--no_cuda', action='store_true',
                         help='If true, cuda is not used.')
+    parser.add_argument('--gpu_id', type=int, default=0,
+                        help='GPU id')
     parser.add_argument('--n_classes', type=int, default=80,
                         help='Number of classes in coco dataset')
     parser.set_defaults(no_cuda=False)
@@ -100,7 +102,7 @@ def test_model_time(opts, model, frame_size, annotations):
                 opts, frame_size, img_idx, batch, total_images, images)
 
             # input = np.random.rand(batch, frame_size, frame_size, 3)
-            torch.cuda.synchronize()
+            torch.cuda.synchronize(opts.gpu_id)
             start_time = timeit.default_timer()
             start_perf = time.perf_counter()
             input = read_jpg_in_numpy(jpg_files, frame_size) # dtype is uint8
@@ -108,9 +110,9 @@ def test_model_time(opts, model, frame_size, annotations):
                 and input.shape[2] == frame_size and input.shape[3] == 3
             with torch.no_grad():
                 output = do_detect(model, input, 0.5, 0.4,
-                                   use_cuda=(not opts.no_cuda), gpu_number=0)
+                                   use_cuda=(not opts.no_cuda), gpu_number=opts.gpu_id)
 
-            torch.cuda.synchronize()
+            torch.cuda.synchronize(opts.gpu_id)
             inference_time = (timeit.default_timer() - start_time) * 1000
             perf_time = (time.perf_counter() - start_perf) * 1000
             print("Processing batch size:", batch, inference_time, perf_time)
@@ -130,12 +132,12 @@ def load_model(opts, frame_size):
     weight_file = os.path.join(
         opts.weights_dir, "yolov4_{}.pth".format(frame_size))
     checkpoint = torch.load(
-        weight_file, map_location=torch.device('cuda'))
+        weight_file, map_location='cuda:{}'.format(opts.gpu_id))
     model.load_state_dict(checkpoint['state_dict'])
 
     model.eval()
     if not opts.no_cuda:
-        model.cuda(0)
+        model.cuda(opts.gpu_id)
 
     # Zero grad for parameters
     for param in model.parameters():
@@ -145,7 +147,8 @@ def load_model(opts, frame_size):
 
 if __name__ == "__main__":
     opts = parse_opts()
-
+  
+    torch.cuda.set_device(opts.gpu_id)
     annotations_file_path = opts.gt_annotations_path
     with open(annotations_file_path) as annotations_file:
         try:
