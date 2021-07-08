@@ -62,7 +62,8 @@ def read_image_in_jpg(opts, frame_size, index, batch_size, total_images, images)
     jpg_files = []
     indexes = []
     for _ in range(batch_size):
-        index = index % total_images
+        # index = index % total_images
+        index = random.randint(0, total_images)
         indexes.append(index)
         image_file_name = images[index]["file_name"]
         # print(image_file_name, opts.dataset_dir)
@@ -79,7 +80,7 @@ def read_jpg_in_numpy(jpg_files, frame_size):
     for jpg_file in jpg_files:
         img = cv2.imdecode(np.fromstring(
             jpg_file, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
-        # img = cv2.resize(img, (frame_size, frame_size), cv2.INTER_NEAREST)
+        img = cv2.resize(img, (frame_size, frame_size), cv2.INTER_NEAREST)
         imgs.append(img)
     imgs = np.array(imgs)
     return imgs
@@ -102,7 +103,7 @@ def test_model_time(opts, model, frame_size, annotations):
             torch.cuda.synchronize()
             start_time = timeit.default_timer()
             start_perf = time.perf_counter()
-            input = read_jpg_in_numpy(jpg_files, frame_size)
+            input = read_jpg_in_numpy(jpg_files, frame_size) # dtype is uint8
             assert input.shape[0] == batch and input.shape[1] == frame_size \
                 and input.shape[2] == frame_size and input.shape[3] == 3
             with torch.no_grad():
