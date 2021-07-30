@@ -49,6 +49,7 @@ def parse_opts():
                         default=None, help='dataset dir')
     parser.add_argument('--total_iter', type=int,
                         default=100, help='Total iterations')
+    parser.add_argument('--log_dir', type=str, default="", help="Log dir")
     args = parser.parse_args()
     args_dict = args.__dict__
     print('{:-^100}'.format('Configurations'))
@@ -65,7 +66,7 @@ def read_image_in_jpg(opts, frame_size, index, batch_size, total_images, images)
     indexes = []
     for _ in range(batch_size):
         # index = index % total_images
-        index = random.randint(0, total_images)
+        index = random.randint(0, total_images-1)
         indexes.append(index)
         image_file_name = images[index]["file_name"]
         # print(image_file_name, opts.dataset_dir)
@@ -89,7 +90,7 @@ def read_jpg_in_numpy(jpg_files, frame_size):
 
 
 def test_model_time(opts, model, frame_size, annotations):
-    output_file = open('profile_latency_{}.txt'.format(frame_size), 'w')
+    output_file = open(f'{opts.log_dir}/profile_latency_{frame_size}.txt'.format(frame_size), 'w')
     print("{:<20s},{:<20s},{:<20s}".format(
         "ModelSize", "Batch", "InferenceTime"), file=output_file)
     images = annotations["images"]
@@ -98,6 +99,7 @@ def test_model_time(opts, model, frame_size, annotations):
     for batch in range(1, opts.max_batch_size+1, 1):
         print("Processing batch size", batch)
         for _ in range(opts.total_iter):
+            # time.sleep(0.004)
             jpg_files = read_image_in_jpg(
                 opts, frame_size, img_idx, batch, total_images, images)
 
@@ -106,6 +108,7 @@ def test_model_time(opts, model, frame_size, annotations):
             start_time = timeit.default_timer()
             start_perf = time.perf_counter()
             input = read_jpg_in_numpy(jpg_files, frame_size) # dtype is uint8
+            batch_time = (timeit.default_timer() - start_time) * 1e3
             assert input.shape[0] == batch and input.shape[1] == frame_size \
                 and input.shape[2] == frame_size and input.shape[3] == 3
             with torch.no_grad():
@@ -115,7 +118,7 @@ def test_model_time(opts, model, frame_size, annotations):
             torch.cuda.synchronize(opts.gpu_id)
             inference_time = (timeit.default_timer() - start_time) * 1000
             perf_time = (time.perf_counter() - start_perf) * 1000
-            print("Processing batch size:", batch, inference_time, perf_time)
+            print("Processing batch size:", batch, batch_time, inference_time, perf_time)
             print("{:<20d},{:<20d},{:<20.2f}".format(
                 frame_size, batch, inference_time), file=output_file)
             # ms = torch.cuda.memory_summary(device=None, abbreviated=False)
@@ -162,3 +165,5 @@ if __name__ == "__main__":
     model = load_model(opts, frame_size)
     model.print_network()
     test_model_time(opts, model, frame_size, annotations)
+
+
