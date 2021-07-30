@@ -124,6 +124,8 @@ def parse_opts():
                         default='cfg/', help='Model config directory')
     parser.add_argument('--video_file', type=str,
                         help='video file')
+    parser.add_argument('--input_size', type=int,
+                        help='Input size of model')
     parser.add_argument('--log_dir', type=str, default="", help="Log dir")
     args = parser.parse_args()
     args_dict = args.__dict__

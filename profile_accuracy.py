@@ -138,7 +138,7 @@ def test(model, annotations, cfg):
     # throwaway_image = Image.open('data/dog.jpg').convert('RGB').resize((model.width, model.height))
     throwaway_image = cv2.imread('data/dog.jpg')
     throwaway_image = cv2.resize(
-        throwaway_image, (model.width, model.height), cv2.INTER_LINEAR)
+        throwaway_image, (model.width, model.height), cv2.INTER_NEAREST)
     do_detect(model, throwaway_image, 0.5, 0.4, use_cuda)
 
     total_images = len(images)
