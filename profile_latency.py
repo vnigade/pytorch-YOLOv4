@@ -112,7 +112,7 @@ def test_model_time(opts, model, frame_size, annotations):
             assert input.shape[0] == batch and input.shape[1] == frame_size \
                 and input.shape[2] == frame_size and input.shape[3] == 3
             with torch.no_grad():
-                output = do_detect(model, input, 0.5, 0.4,
+                output = do_detect(model, input, 0.20, 0.4,
                                    use_cuda=(not opts.no_cuda), gpu_number=opts.gpu_id)
 
             torch.cuda.synchronize(opts.gpu_id)

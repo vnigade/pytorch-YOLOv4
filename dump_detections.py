@@ -96,7 +96,7 @@ def dump(model, opts, frame_size):
         # img = cv2.imread(os.path.join(cfg.dataset_dir, image_file_name))
         img = cv2.resize(
             img, (model.width, model.height), cv2.INTER_NEAREST)
-        batch_boxes = do_detect(model, img, 0.5, 0.4, use_cuda=(
+        batch_boxes = do_detect(model, img, 0.20, 0.4, use_cuda=(
             not opts.no_cuda), gpu_number=opts.gpu_id)
 
         assert (len(batch_boxes) == 1)
@@ -124,7 +124,7 @@ def parse_opts():
                         default='cfg/', help='Model config directory')
     parser.add_argument('--video_file', type=str,
                         help='video file')
-    parser.add_argument('--input_size', type=int,
+    parser.add_argument('--input_size', type=str,
                         help='Input size of model')
     parser.add_argument('--log_dir', type=str, default="", help="Log dir")
     args = parser.parse_args()

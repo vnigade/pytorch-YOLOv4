@@ -139,7 +139,8 @@ def test(model, annotations, cfg):
     throwaway_image = cv2.imread('data/dog.jpg')
     throwaway_image = cv2.resize(
         throwaway_image, (model.width, model.height), cv2.INTER_NEAREST)
-    do_detect(model, throwaway_image, 0.5, 0.4, use_cuda)
+    # do_detect(model, throwaway_image, 0.5, 0.4, use_cuda)
+    do_detect(model, throwaway_image, 0.20, 0.4, use_cuda)
 
     total_images = len(images)
     boxes_json = []
@@ -174,7 +175,8 @@ def test(model, annotations, cfg):
         # print("Batch images shape", batch_images.shape)
         start = time.time()
         with torch.no_grad():
-            batch_boxes = do_detect(model, batch_images, 0.5, 0.4, use_cuda)
+            # batch_boxes = do_detect(model, batch_images, 0.5, 0.4, use_cuda)
+            batch_boxes = do_detect(model, batch_images, 0.20, 0.4, use_cuda)
         finish = time.time()
         if type(batch_boxes) == list:
             assert len(batch_boxes) == (batch_end-batch_start)

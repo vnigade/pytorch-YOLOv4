@@ -58,3 +58,4 @@ if __name__ == "__main__":
 
     for frame_size in FRAME_SIZES:
         convert(opts, frame_size)
+    # convert(opts, "1280_704")
